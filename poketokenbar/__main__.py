@@ -24,19 +24,22 @@ def _claim_single_instance():
     so a second launch bows out. The lock is a file in the data directory rather
     than a named mutex: the data directory is the thing actually being guarded,
     and a file lock still works when the two processes sit on opposite sides of
-    a sandbox boundary (where a Global\\ mutex may be unreachable). Windows
-    drops the lock automatically when the process exits, so a crash cannot leave
-    the app permanently unlaunchable.
+    a sandbox boundary (where a Global\\ mutex may be unreachable). Both the
+    Windows (`msvcrt`) and POSIX (`fcntl`) locks drop automatically when the
+    process exits, so a crash cannot leave the app permanently unlaunchable.
     """
-    import msvcrt
-
     from .app import data_dir
 
     path = data_dir() / "instance.lock"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         handle = open(path, "a+b")
-        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         try:
             handle.close()

@@ -128,8 +128,11 @@ def _draw_egg(size: int) -> Image.Image:
 
 
 def data_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-    return Path(root) / "PokeTokenBarWin"
+    if sys.platform == "win32":
+        root = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(root) / "PokeTokenBarWin"
+    xdg = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(xdg) / "poketokenbar"
 
 
 @dataclass

@@ -1,3 +1,6 @@
 requests>=2.31
 pystray>=0.19
 Pillow>=10.0
+# Only used to shape the floating pet's window on X11/XWayland (see
+# poketokenbar/x11shape.py); irrelevant and unneeded on Windows.
+python-xlib>=0.33; sys_platform != "win32"

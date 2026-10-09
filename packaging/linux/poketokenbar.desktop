@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=PokeTokenBar
+Comment=Raise a Pokemon with your Claude Code tokens
+Exec=python3 -m poketokenbar
+Icon=poketokenbar
+Terminal=false
+Categories=Utility;
+NoDisplay=false
+StartupNotify=false

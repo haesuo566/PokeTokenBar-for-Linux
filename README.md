@@ -1,15 +1,19 @@
-# PokeTokenBar for Windows
+# PokeTokenBar for Linux
 
-Raise a Pokémon with the Claude Code tokens you're already burning — in the
-Windows system tray.
+Raise a Pokémon with the Claude Code tokens you're already burning — in your
+Linux system tray.
 
-A from-scratch Windows implementation of the idea behind
+A Linux port of [PokeTokenBar for Windows](https://github.com/NMHK-134711/PokeTokenBar-for-Windows),
+itself a from-scratch implementation of the idea behind
 [chattymin/PokeTokenBar](https://github.com/chattymin/PokeTokenBar) (macOS,
-Swift 6, menu-bar only). No Swift code is ported; the data sources and the game
-rules are reimplemented in Python against the same public inputs.
+Swift 6, menu-bar only). No Swift (or Windows-specific) code is ported; the
+data sources and the game rules are the same Python, with the tray, the
+floating pet's window shaping, and the data directory swapped for their Linux
+equivalents — see [Porting notes](#porting-notes-from-the-windows-version)
+below. The app also still runs unmodified on Windows.
 
-[chattymin/PokeTokenBar](https://github.com/chattymin/PokeTokenBar) 위 깃허브 내용을 윈도우에서도 즐기고싶어 만든 코드입니다. 
-기능과 내용을 윈도우에서 작동하도록 새로 코딩해 구현하였습니다.
+[chattymin/PokeTokenBar](https://github.com/chattymin/PokeTokenBar) 위 깃허브 내용을 리눅스에서도 즐기고싶어 만든 코드입니다.
+기능과 내용을 리눅스에서 작동하도록 새로 코딩해 구현하였습니다.
 
 UI는 한국어가 기본입니다 (설정에서 English로 바꿀 수 있습니다).
 
@@ -26,43 +30,60 @@ UI는 한국어가 기본입니다 (설정에서 English로 바꿀 수 있습니
 
 ## Install
 
-**Option A — the executable (no Python needed).** Download
-`PokeTokenBar.exe` from the **[latest release](https://github.com/NMHK-134711/PokeTokenBar-for-Windows/releases/latest)** and run
-it. Single file, ~24 MB, no installer, no Python.
+**System packages first.** The tray icon and the floating pet need two things
+most distros don't install by default: Tk (tkinter), and a tray-icon backend —
+either GTK's AppIndicator (any desktop that speaks the StatusNotifierItem
+protocol: KDE Plasma, GNOME-with-the-AppIndicator-extension, Cinnamon, XFCE,
+LXQt, Budgie, ...) or an Xorg fallback pystray also understands.
 
-Windows will warn you the first time: the executable is unsigned, so SmartScreen
-shows a blue *"Windows protected your PC"* dialog — click **More info → Run
-anyway**. Some antivirus flags PyInstaller one-file builds for the same reason.
+```bash
+# Arch / Manjaro
+sudo pacman -S tk python-gobject libayatana-appindicator
 
-`dist/` is not committed, so building from source produces the exe locally
-instead.
+# Debian / Ubuntu
+sudo apt install python3-tk gir1.2-ayatanaappindicator3-0.1 python3-gi
 
-**Option B — from source.**
+# Fedora
+sudo dnf install python3-tkinter libappindicator-gtk3 python3-gobject
+```
+
+These three are system packages (they wrap GObject introspection data and a
+compiled Tk), not pip packages, which is why they are not in
+`requirements.txt`. pystray falls back to a plain Xorg tray icon if no
+AppIndicator implementation is found, and the floating pet still works without
+one of its own — see [Porting notes](#porting-notes-from-the-windows-version).
+
+**Then the app itself:**
 
 ```bash
 pip install -r requirements.txt
-python -m poketokenbar
+python3 -m poketokenbar
 ```
 
-Requires Python 3.10+ with tkinter (bundled with the python.org installer).
+Requires Python 3.10+.
 
-### Building the executable yourself
+**Application-menu launcher (optional).** `packaging/linux/install.sh` draws
+the egg icon, writes a `.desktop` entry into your user application menu, and
+(with `--autostart`) a copy that launches on login:
 
 ```bash
-pip install pyinstaller
-python build.py
+./packaging/linux/install.sh            # adds it to your app launcher
+./packaging/linux/install.sh --autostart  # + starts it on login
 ```
 
-Output lands in `dist/PokeTokenBar.exe`. The icon is drawn by the app itself at
-build time, so no Pokémon artwork is compiled into the binary. If a copy is
-running the build writes `PokeTokenBar-new.exe` beside it rather than failing.
+It runs `python3 -m poketokenbar` with this checkout on `PYTHONPATH`, so
+`requirements.txt` must already be installed for whichever `python3` is first
+on your `PATH`; set `PYTHON=/path/to/venv/bin/python3` before the command to
+point it at a virtualenv instead.
 
-**The tray icon starts hidden.** Windows puts new tray icons in the overflow —
-click the `^` chevron next to the clock and drag it onto the taskbar to pin it.
+**The tray icon starts hidden**, same as upstream on Windows: most desktops
+put a brand-new tray icon in an overflow drawer — look for a `>` or `v`
+chevron near the clock — and let you drag it out from there to keep it
+visible.
 
-**Start with Windows:** press `Win+R`, run `shell:startup`, and put a shortcut
-to `PokeTokenBar.exe` (or `run.pyw`, if running from source) in the folder that
-opens.
+**On Windows**, `build.py` still produces a standalone `PokeTokenBar.exe` via
+PyInstaller (`pip install pyinstaller && python build.py`), and `run.pyw` is
+still the windowless double-click launcher; neither changed in this port.
 
 ## What it does
 
@@ -174,17 +195,19 @@ external CLI, no account access, nothing uploaded.
 
 Only two hosts are contacted, both for Pokémon data, never for your usage:
 `raw.githubusercontent.com` (species tables and sprites) and nothing else.
-Everything is cached under `%LOCALAPPDATA%\PokeTokenBarWin\`.
+Everything is cached under `~/.local/share/poketokenbar/` (or
+`%LOCALAPPDATA%\PokeTokenBarWin\` on Windows).
 
 ### One deliberate difference from the macOS original
 
 The original shows Anthropic's **official** 5-hour and weekly limit percentages
 by reading an OAuth token out of the macOS Keychain and calling an unofficial
-`api.anthropic.com` endpoint. This version does not. Windows stores credentials
-differently, and an undocumented endpoint is a fragile thing to depend on — so
-the 5-hour and weekly meters run against **budgets you set yourself** in
-Settings (defaults: 120M per window, 2B per week). Filling one still earns a
-Rare Candy. Nothing here ever reads your credentials.
+`api.anthropic.com` endpoint. This version does not. Desktop Linux and Windows
+both store credentials differently from the macOS Keychain, and an undocumented
+endpoint is a fragile thing to depend on — so the 5-hour and weekly meters run
+against **budgets you set yourself** in Settings (defaults: 120M per window, 2B
+per week). Filling one still earns a Rare Candy. Nothing here ever reads your
+credentials.
 
 ## Tuning
 
@@ -195,13 +218,15 @@ language — saves store the English keys, so switching language never invalidat
 your Pokédex.
 
 Settings also shows the data folder currently in use. That matters more than it
-sounds: a sandboxed launcher can redirect `%LOCALAPPDATA%` elsewhere, so two
-copies started different ways can quietly keep separate saves. If a companion
-seems to have vanished, check this path first.
+sounds: a sandboxed launcher can redirect `$XDG_DATA_HOME` (or
+`%LOCALAPPDATA%` on Windows) elsewhere, so two copies started different ways
+can quietly keep separate saves. If a companion seems to have vanished, check
+this path first.
 
-`%LOCALAPPDATA%\PokeTokenBarWin\config.json` holds the same settings if you
-prefer editing them by hand; it is read as UTF-8 with or without a BOM, so
-Notepad is safe.
+`~/.local/share/poketokenbar/config.json` (`$XDG_DATA_HOME/poketokenbar/` if
+you've set that variable; `%LOCALAPPDATA%\PokeTokenBarWin\config.json` on
+Windows) holds the same settings if you prefer editing them by hand; it is
+read as UTF-8 with or without a BOM, so any editor is safe.
 
 Game constants live at the top of `poketokenbar/game.py` — `EGG_HATCH_TOKENS`,
 `BASE_GRADUATE_TOKENS`, `RARITY_MULTIPLIER`, and `SHOP_PRICES`. The defaults are
@@ -221,8 +246,10 @@ poketokenbar/
   app.py       config, background refresh, sprite frame loading
   ui.py        main window and floating pet (tkinter)
   tray.py      system tray icon (pystray)
+  x11shape.py  Linux-only: cuts the floating pet to its sprite's silhouette
   i18n.py      every UI string, in Korean and English
-build.py       draws the icon and runs PyInstaller
+packaging/linux/ .desktop launcher + install.sh for the application menu
+build.py       Windows only: draws the icon and runs PyInstaller for the .exe
 ```
 
 ### Adding another agent
@@ -239,6 +266,51 @@ takes priority over the fetched sprite. Any size works; icons are scaled with
 nearest-neighbour when enlarging so pixel art stays crisp. The folder is absent
 by default, and anything you put there is yours, not part of this project.
 
+## Porting notes from the Windows version
+
+Everything below `poketokenbar/usage.py`, `entry.py`, `game.py`, `pokedata.py`
+and `i18n.py` is unmodified: usage parsing, pricing, and game rules don't know
+or care what OS they're running on. What actually changed, and why:
+
+- **Data directory.** `%LOCALAPPDATA%\PokeTokenBarWin\` becomes
+  `$XDG_DATA_HOME/poketokenbar/` (`~/.local/share/poketokenbar/` by default) —
+  the conventional place for an app's own state on Linux, same as `%LOCALAPPDATA%`
+  is on Windows.
+- **Single-instance lock.** `msvcrt.locking` becomes `fcntl.flock`; both are
+  advisory, per-process locks the OS releases automatically on exit or crash,
+  so the behaviour (a second launch quietly bows out) is identical.
+- **The floating pet's transparent window.** Windows carves the sprite's
+  silhouette out of the window by keying one background colour
+  (`-transparentcolor`); X11 has no such attribute, so `x11shape.py` does the
+  equivalent with the **Shape extension** instead — a 1-bit mask, built from
+  the sprite's already-binarised alpha channel, applied to the window's
+  bounding region after each render. This works the same way through XWayland,
+  so it covers a Wayland session too, as long as `python-xlib` is installed and
+  the compositor ships an XWayland server (every major one does). If shaping
+  genuinely never becomes available, the pet still works — it is just a plain
+  rounded card instead of a cut-out silhouette, rather than failing outright.
+- **The tray backend.** pystray picks Win32 on Windows and, on Linux,
+  whichever of AppIndicator / GTK / Xorg it finds (see Install above). One
+  real UX gap survives this swap: the AppIndicator/StatusNotifierItem protocol
+  has no notion of a plain left click separate from opening the menu, so
+  Windows' double-click-to-open has no Linux equivalent — opening the window
+  always goes through **Tray menu → Open**. Nothing in `tray.py` can paper
+  over a difference in the underlying tray protocol.
+- **Fonts.** "Segoe UI" only exists on Windows; `ui.py` picks "Noto Sans CJK
+  KR" on Linux instead, both because it actually exists there and because the
+  UI defaults to Korean. fontconfig substitutes a reasonable fallback if even
+  that face is missing, the same way Tk/Win32 already does for an unknown
+  family.
+- **Animated tray icon.** AppIndicator has no in-memory icon update — every
+  frame change is a PNG encode plus a temp file write (Win32 instead swaps an
+  in-memory `HICON`) — so the animation interval is slower on Linux
+  (`tray.py`'s `FRAME_MS`) to keep that off the hot path.
+- **Packaging.** `build.py`/PyInstaller stays Windows-only (a `.exe` makes
+  sense there; it doesn't on Linux, where `pip install` already covers the
+  "no build step" case). `packaging/linux/` adds the Linux equivalent of "an
+  icon you can click": a `.desktop` entry and an install script, in place of
+  the Start Menu shortcut `run.pyw` is meant for.
+
 ## Licence & disclaimer
 
 MIT for the code here. This is an unofficial, non-commercial fan project, **not
@@ -248,8 +320,9 @@ trademarks of their respective owners. Provided as is, for personal use only.
 
 **No Pokémon artwork is bundled into the program.** Species data, Pokémon
 sprites, the egg, and every item icon are fetched at runtime from the public
-[PokéAPI](https://pokeapi.co) and cached under the user's own `%LOCALAPPDATA%`;
-none of it is compiled into the executable or shipped as a source asset. The app
+[PokéAPI](https://pokeapi.co) and cached under the user's own data directory
+(`~/.local/share/poketokenbar/` on Linux, `%LOCALAPPDATA%` on Windows); none of
+it is compiled into the executable or shipped as a source asset. The app
 icon is a plain egg the program draws itself. PokéAPI has no mint sprite in any
 flavour, so the Mint item borrows the Ability Urge icon — also fetched, not
 shipped.

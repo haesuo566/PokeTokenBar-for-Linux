@@ -3,10 +3,21 @@
 The Windows tray shows an icon and a tooltip but no adjacent text, so the
 compact "200.7M" readout the macOS menu bar carries lives in the tooltip here
 (and in the floating pet, if enabled).
+
+pystray picks its backend per platform at import time: Win32 on Windows, and
+on Linux whichever of AppIndicator/GTK/Xorg is available -- this app needs
+nothing special for that beyond having `libayatana-appindicator` (or GTK)
+installed. One real behaviour gap survives the swap, though: the
+AppIndicator/StatusNotifierItem protocol Linux desktops use has no concept of
+a plain left click separate from opening the menu, so `default=True` below
+(Windows' double-click-to-open) has no effect there -- opening is always one
+extra click, through "Open" in the menu. Nothing in this file can paper over
+that; it is a difference between the two tray protocols.
 """
 
 from __future__ import annotations
 
+import sys
 import threading
 
 import pystray
@@ -15,7 +26,11 @@ from PIL import Image
 from .i18n import t
 
 ICON_SIZE = 64
-FRAME_MS = 200
+# Every animated frame on Linux costs a PNG encode plus a temp-file
+# write+unlink (AppIndicator has no in-memory icon update, unlike Win32's
+# HICON swap), so a slower cadence keeps that off the hot path without the
+# animation looking stuttery.
+FRAME_MS = 200 if sys.platform == "win32" else 400
 
 
 class Tray:

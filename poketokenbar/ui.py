@@ -7,12 +7,14 @@ an optional always-on-top floating pet that shows the sprite plus today's count.
 
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 from datetime import datetime, timezone
 from tkinter import ttk
 
-from PIL import ImageTk
+from PIL import Image, ImageTk
 
+from . import x11shape
 from .app import ALL
 from .game import EGG_FLOORS, RARITY_ORDER, SHOP_PRICES
 from .i18n import nature as tr_nature, rarity as tr_rarity, set_lang, t
@@ -24,6 +26,12 @@ FG = "#e8e8ef"
 MUTED = "#9aa0b0"
 ACCENT = "#f2b544"
 GOOD = "#5ad18b"
+
+# "Segoe UI" only exists on Windows; fontconfig resolves "Noto Sans CJK KR" on
+# Linux to whatever CJK-capable face is installed (or silently substitutes its
+# own default if none is), which matters here since the UI defaults to Korean.
+FONT = "Segoe UI" if sys.platform == "win32" else "Noto Sans CJK KR"
+MONO_FONT = "Consolas" if sys.platform == "win32" else "DejaVu Sans Mono"
 
 RARITY_COLOR = {
     "Common": "#8d93a3",
@@ -80,6 +88,7 @@ class SpriteView(tk.Label):
         self.size = size
         self.matte = matte
         self._frames: list[ImageTk.PhotoImage] = []
+        self._pil_frames: list[Image.Image] = []   # kept for X11 shape masking
         self._index = 0
         self._job = None
         self._key = None
@@ -96,6 +105,7 @@ class SpriteView(tk.Label):
         )
         if self.matte:
             images = [_matte(f) for f in images]
+        self._pil_frames = images
         self._frames = [ImageTk.PhotoImage(f) for f in images] or []
         self._index = 0
         if self._job:
@@ -105,6 +115,12 @@ class SpriteView(tk.Label):
             self.configure(image=self._frames[0])
             if len(self._frames) > 1:
                 self._tick()
+
+    def current_alpha(self) -> Image.Image | None:
+        """The shown frame's alpha channel, for X11 window shaping."""
+        if not self._pil_frames:
+            return None
+        return self._pil_frames[self._index].getchannel("A")
 
     def _tick(self) -> None:
         self._index = (self._index + 1) % len(self._frames)
@@ -121,7 +137,7 @@ def _action(parent, text: str, command, enabled: bool) -> tk.Button:
     """A small accent button that visibly greys out when it can't be used."""
     return tk.Button(
         parent, text=text, command=command, relief="flat", cursor="hand2",
-        font=("Segoe UI", 9, "bold"), width=5,
+        font=(FONT, 9, "bold"), width=5,
         bg=ACCENT if enabled else "#33363f",
         fg="#1a1a1a" if enabled else MUTED,
         disabledforeground=MUTED,
@@ -133,9 +149,9 @@ def _meter(parent, label: str):
     row = tk.Frame(parent, bg=PANEL)
     head = tk.Frame(row, bg=PANEL)
     head.pack(fill="x")
-    caption = tk.Label(head, text=label, bg=PANEL, fg=MUTED, font=("Segoe UI", 9))
+    caption = tk.Label(head, text=label, bg=PANEL, fg=MUTED, font=(FONT, 9))
     caption.pack(side="left")
-    value = tk.Label(head, text="-", bg=PANEL, fg=FG, font=("Segoe UI", 9, "bold"))
+    value = tk.Label(head, text="-", bg=PANEL, fg=FG, font=(FONT, 9, "bold"))
     value.pack(side="right")
     bar = ttk.Progressbar(row, maximum=100, style="Poke.Horizontal.TProgressbar")
     bar.pack(fill="x", pady=(3, 0))
@@ -205,20 +221,20 @@ class MainWindow(tk.Toplevel):
         info = tk.Frame(top, bg=PANEL)
         info.pack(side="left", fill="x", expand=True, padx=(14, 0))
         self.name_lbl = tk.Label(info, text=t("common.loading"), bg=PANEL, fg=FG,
-                                 font=("Segoe UI", 15, "bold"), anchor="w")
+                                 font=(FONT, 15, "bold"), anchor="w")
         self.name_lbl.pack(fill="x")
         self.sub_lbl = tk.Label(info, text="", bg=PANEL, fg=MUTED,
-                                font=("Segoe UI", 9), anchor="w", justify="left")
+                                font=(FONT, 9), anchor="w", justify="left")
         self.sub_lbl.pack(fill="x", pady=(2, 6))
         self.grow_bar = ttk.Progressbar(info, maximum=100,
                                         style="Poke.Horizontal.TProgressbar")
         self.grow_bar.pack(fill="x")
         self.grow_lbl = tk.Label(info, text="", bg=PANEL, fg=MUTED,
-                                 font=("Segoe UI", 8), anchor="w")
+                                 font=(FONT, 8), anchor="w")
         self.grow_lbl.pack(fill="x", pady=(3, 0))
 
         self.line_lbl = tk.Label(self.home, text="", bg=PANEL, fg=MUTED,
-                                 font=("Segoe UI", 9), anchor="w")
+                                 font=(FONT, 9), anchor="w")
         self.line_lbl.pack(fill="x", pady=(0, 10), **pad)
 
         tk.Frame(self.home, bg="#2a2d38", height=1).pack(fill="x", **pad)
@@ -229,10 +245,10 @@ class MainWindow(tk.Toplevel):
         stats = tk.Frame(self.home, bg=PANEL)
         stats.pack(fill="x", pady=(8, 12), **pad)
         self.today_lbl = tk.Label(stats, text="-", bg=PANEL, fg=FG,
-                                  font=("Segoe UI", 26, "bold"), anchor="w")
+                                  font=(FONT, 26, "bold"), anchor="w")
         self.today_lbl.pack(fill="x")
         self.today_sub = tk.Label(stats, text="", bg=PANEL, fg=MUTED,
-                                  font=("Segoe UI", 9), anchor="w")
+                                  font=(FONT, 9), anchor="w")
         self.today_sub.pack(fill="x")
 
         meters = tk.Frame(self.home, bg=PANEL)
@@ -244,19 +260,19 @@ class MainWindow(tk.Toplevel):
         row2.pack(fill="x", pady=(0, 10))
 
         self.meter_note = tk.Label(self.home, text="", bg=PANEL, fg="#6f7686",
-                                   font=("Segoe UI", 8), anchor="w")
+                                   font=(FONT, 8), anchor="w")
         self.meter_note.pack(fill="x", **pad)
 
         self.burn_lbl = tk.Label(self.home, text="", bg=PANEL, fg=MUTED,
-                                 font=("Segoe UI", 9), anchor="w")
+                                 font=(FONT, 9), anchor="w")
         self.burn_lbl.pack(fill="x", pady=(6, 0), **pad)
 
         self.totals_lbl = tk.Label(self.home, text="", bg=PANEL, fg=MUTED,
-                                   font=("Segoe UI", 9), anchor="w", justify="left")
+                                   font=(FONT, 9), anchor="w", justify="left")
         self.totals_lbl.pack(fill="x", pady=(10, 0), **pad)
 
         self.event_lbl = tk.Label(self.home, text="", bg=PANEL, fg=GOOD,
-                                  font=("Segoe UI", 9), anchor="w", wraplength=400,
+                                  font=(FONT, 9), anchor="w", wraplength=400,
                                   justify="left")
         self.event_lbl.pack(fill="x", pady=(10, 16), **pad)
 
@@ -282,12 +298,12 @@ class MainWindow(tk.Toplevel):
 
         def field(label: str, key: str, hint: str = "") -> None:
             tk.Label(wrap, text=label, bg=PANEL, fg=FG, anchor="w",
-                     font=("Segoe UI", 9, "bold")).pack(fill="x", pady=(10, 2))
+                     font=(FONT, 9, "bold")).pack(fill="x", pady=(10, 2))
             tk.Entry(wrap, textvariable=self.vars[key], bg="#2a2d38", fg=FG,
                      insertbackground=FG, relief="flat").pack(fill="x", ipady=4)
             if hint:
                 tk.Label(wrap, text=hint, bg=PANEL, fg=MUTED, anchor="w",
-                         font=("Segoe UI", 8), wraplength=400,
+                         font=(FONT, 8), wraplength=400,
                          justify="left").pack(fill="x", pady=(2, 0))
 
         field(t("set.refresh"), "refresh_minutes")
@@ -305,35 +321,35 @@ class MainWindow(tk.Toplevel):
             tk.Checkbutton(
                 wrap, text=text, variable=self.vars[key], bg=PANEL, fg=FG,
                 selectcolor=PANEL, activebackground=PANEL, activeforeground=FG,
-                anchor="w", font=("Segoe UI", 9), highlightthickness=0, bd=0,
+                anchor="w", font=(FONT, 9), highlightthickness=0, bd=0,
             ).pack(fill="x", pady=(8, 0))
 
         tk.Label(wrap, text=t("set.language"), bg=PANEL, fg=FG, anchor="w",
-                 font=("Segoe UI", 9, "bold")).pack(fill="x", pady=(12, 2))
+                 font=(FONT, 9, "bold")).pack(fill="x", pady=(12, 2))
         langs = tk.Frame(wrap, bg=PANEL)
         langs.pack(fill="x")
         for value, text in (("ko", "한국어"), ("en", "English")):
             tk.Radiobutton(
                 langs, text=text, value=value, variable=self.vars["language"],
                 bg=PANEL, fg=FG, selectcolor=PANEL, activebackground=PANEL,
-                activeforeground=FG, font=("Segoe UI", 9), highlightthickness=0, bd=0,
+                activeforeground=FG, font=(FONT, 9), highlightthickness=0, bd=0,
             ).pack(side="left", padx=(0, 12))
 
         # Showing the path makes it obvious which save is in play — sandboxed
         # launchers can silently redirect %LOCALAPPDATA% elsewhere.
         tk.Label(wrap, text=t("set.datadir"), bg=PANEL, fg=FG, anchor="w",
-                 font=("Segoe UI", 9, "bold")).pack(fill="x", pady=(14, 2))
+                 font=(FONT, 9, "bold")).pack(fill="x", pady=(14, 2))
         path_box = tk.Entry(wrap, bg="#23262f", fg=MUTED, insertbackground=FG,
-                            relief="flat", font=("Consolas", 8))
+                            relief="flat", font=(MONO_FONT, 8))
         path_box.insert(0, str(self.app.dir))
         path_box.configure(state="readonly", readonlybackground="#23262f")
         path_box.pack(fill="x", ipady=3)
 
         tk.Button(wrap, text=t("set.save"), command=self._save_settings, bg=ACCENT,
-                  fg="#1a1a1a", relief="flat", font=("Segoe UI", 10, "bold"),
+                  fg="#1a1a1a", relief="flat", font=(FONT, 10, "bold"),
                   cursor="hand2").pack(fill="x", pady=(18, 0), ipady=6)
         self.settings_msg = tk.Label(wrap, text="", bg=PANEL, fg=GOOD,
-                                     font=("Segoe UI", 9))
+                                     font=(FONT, 9))
         self.settings_msg.pack(fill="x", pady=(8, 0))
 
     def _save_settings(self) -> None:
@@ -494,7 +510,7 @@ class MainWindow(tk.Toplevel):
                 command=lambda n=name: self._set_scope(n),
                 bg=ACCENT if selected else "#2a2d38",
                 fg="#1a1a1a" if selected else MUTED,
-                relief="flat", cursor="hand2", font=("Segoe UI", 8, "bold"),
+                relief="flat", cursor="hand2", font=(FONT, 8, "bold"),
                 padx=10, pady=2,
             ).pack(side="left", padx=(0, 5))
 
@@ -570,9 +586,9 @@ class MainWindow(tk.Toplevel):
         row.pack(fill="x", pady=(6, 10))
         for key in reversed(RARITY_ORDER):
             tk.Label(row, text="\u25cf", bg=PANEL, fg=RARITY_COLOR[key],
-                     font=("Segoe UI", 8)).pack(side="left")
+                     font=(FONT, 8)).pack(side="left")
             tk.Label(row, text=f"{tr_rarity(key)} {counts.get(key, 0)}", bg=PANEL,
-                     fg=MUTED, font=("Segoe UI", 8)).pack(side="left", padx=(2, 12))
+                     fg=MUTED, font=(FONT, 8)).pack(side="left", padx=(2, 12))
 
     # ---- pokedex ---------------------------------------------------
 
@@ -589,7 +605,7 @@ class MainWindow(tk.Toplevel):
                 switch, text=t(key), command=lambda v=view: self._set_dex_view(v),
                 bg=ACCENT if selected else "#2a2d38",
                 fg="#1a1a1a" if selected else MUTED,
-                relief="flat", cursor="hand2", font=("Segoe UI", 9, "bold"),
+                relief="flat", cursor="hand2", font=(FONT, 9, "bold"),
                 padx=12, pady=3,
             ).pack(side="left", padx=(0, 6))
 
@@ -615,7 +631,7 @@ class MainWindow(tk.Toplevel):
                 counts[sp.rarity] = counts.get(sp.rarity, 0) + 1
 
         tk.Label(parent, text=t("dex.title", n=len(owned)), bg=PANEL, fg=FG,
-                 font=("Segoe UI", 11, "bold"), anchor="w").pack(fill="x")
+                 font=(FONT, 11, "bold"), anchor="w").pack(fill="x")
         self._rarity_chips(parent, counts)
 
         if owned:
@@ -626,19 +642,19 @@ class MainWindow(tk.Toplevel):
             if sp is not None:
                 tk.Label(bar, text=t("dex.pin.current",
                                      name=sp.name(app.config.language)),
-                         bg=PANEL, fg=ACCENT, font=("Segoe UI", 8, "bold"),
+                         bg=PANEL, fg=ACCENT, font=(FONT, 8, "bold"),
                          anchor="w").pack(side="left")
                 tk.Button(bar, text=t("dex.pin.clear"),
                           command=lambda: self._toggle_pin(pinned),
                           bg="#2a2d38", fg=MUTED, relief="flat", cursor="hand2",
-                          font=("Segoe UI", 8), padx=8).pack(side="right")
+                          font=(FONT, 8), padx=8).pack(side="right")
             else:
                 tk.Label(bar, text=t("dex.pin.hint"), bg=PANEL, fg=MUTED,
-                         font=("Segoe UI", 8), anchor="w").pack(side="left")
+                         font=(FONT, 8), anchor="w").pack(side="left")
 
         if not owned:
             tk.Label(parent, text=t("dex.empty"), bg=PANEL, fg=MUTED,
-                     font=("Segoe UI", 9), anchor="w").pack(fill="x")
+                     font=(FONT, 9), anchor="w").pack(fill="x")
             return
 
         pages = max(1, (len(owned) + DEX_PER_PAGE - 1) // DEX_PER_PAGE)
@@ -655,7 +671,7 @@ class MainWindow(tk.Toplevel):
             _action(pager, "‹", lambda: self._turn_page(-1),
                     enabled=self._dex_page > 0).pack(side="left")
             tk.Label(pager, text=f"{self._dex_page + 1} / {pages}", bg=PANEL,
-                     fg=MUTED, font=("Segoe UI", 9), width=8).pack(side="left")
+                     fg=MUTED, font=(FONT, 9), width=8).pack(side="left")
             _action(pager, "›", lambda: self._turn_page(1),
                     enabled=self._dex_page < pages - 1).pack(side="left")
 
@@ -681,9 +697,9 @@ class MainWindow(tk.Toplevel):
             self._sprite_label(cell, sid, shiny, DEX_SPRITE, bg).pack(pady=(6, 0))
             tk.Label(cell, text=("\u2605 " if is_pinned else "") + f"#{sid}", bg=bg,
                      fg=ACCENT if is_pinned else MUTED,
-                     font=("Segoe UI", 7)).pack()
+                     font=(FONT, 7)).pack()
             tk.Label(cell, text=sp.name(app.config.language) + (" \u2728" if shiny else ""),
-                     bg=bg, fg=FG, font=("Segoe UI", 8), wraplength=88).pack(pady=(0, 6))
+                     bg=bg, fg=FG, font=(FONT, 8), wraplength=88).pack(pady=(0, 6))
             # The whole cell is the hit target, children included.
             for w in (cell, *cell.winfo_children()):
                 w.bind("<Button-1>", lambda _e, i=sid: self._toggle_pin(i))
@@ -712,7 +728,7 @@ class MainWindow(tk.Toplevel):
             r = rec.get("rarity", "Common")
             counts[r] = counts.get(r, 0) + 1
         tk.Label(parent, text=t("dex.log.title", n=len(log)), bg=PANEL, fg=FG,
-                 font=("Segoe UI", 11, "bold"), anchor="w").pack(fill="x")
+                 font=(FONT, 11, "bold"), anchor="w").pack(fill="x")
         self._rarity_chips(parent, counts)
 
         holder = tk.Frame(parent, bg=PANEL)
@@ -729,7 +745,7 @@ class MainWindow(tk.Toplevel):
                           rec.get("nature", ""), caught_at=rec.get("caught_at", ""))
         if not log and not (c.hatched and c.path):
             tk.Label(inner, text=t("dex.log.empty"), bg=PANEL, fg=MUTED,
-                     font=("Segoe UI", 9), anchor="w").pack(fill="x", pady=6)
+                     font=(FONT, 9), anchor="w").pack(fill="x", pady=6)
 
     def _log_row(self, parent, line, upto, shiny, rarity, nature,
                  raising: bool = False, caught_at: str = "") -> None:
@@ -740,12 +756,12 @@ class MainWindow(tk.Toplevel):
         head = tk.Frame(card, bg="#23262f")
         head.pack(fill="x", padx=8, pady=(6, 0))
         tk.Label(head, text=tr_rarity(rarity), bg=RARITY_COLOR.get(rarity, MUTED),
-                 fg="#1a1a1a", font=("Segoe UI", 7, "bold"), padx=5).pack(side="left")
+                 fg="#1a1a1a", font=(FONT, 7, "bold"), padx=5).pack(side="left")
         if raising:
             tk.Label(head, text=t("dex.raising"), bg=ACCENT, fg="#1a1a1a",
-                     font=("Segoe UI", 7, "bold"), padx=5).pack(side="left", padx=(4, 0))
+                     font=(FONT, 7, "bold"), padx=5).pack(side="left", padx=(4, 0))
         tk.Label(head, text=tr_nature(nature), bg="#23262f", fg=MUTED,
-                 font=("Segoe UI", 8)).pack(side="right")
+                 font=(FONT, 8)).pack(side="right")
 
         strip = tk.Frame(card, bg="#23262f")
         strip.pack(fill="x", padx=8, pady=(4, 6))
@@ -755,17 +771,17 @@ class MainWindow(tk.Toplevel):
                 continue
             if idx:
                 tk.Label(strip, text="\u2192", bg="#23262f", fg=MUTED,
-                         font=("Segoe UI", 9)).pack(side="left", padx=2)
+                         font=(FONT, 9)).pack(side="left", padx=2)
             col = tk.Frame(strip, bg="#23262f")
             col.pack(side="left")
             # Stages not yet reached are shown, but dimmed by the name colour.
             reached = idx <= upto
             self._sprite_label(col, sid, shiny and reached, LOG_SPRITE, "#23262f").pack()
             tk.Label(col, text=sp.name(app.config.language), bg="#23262f",
-                     fg=FG if reached else "#555a68", font=("Segoe UI", 7)).pack()
+                     fg=FG if reached else "#555a68", font=(FONT, 7)).pack()
         if caught_at:
             tk.Label(strip, text=caught_at[:10], bg="#23262f", fg="#555a68",
-                     font=("Segoe UI", 7)).pack(side="right")
+                     font=(FONT, 7)).pack(side="right")
 
     # ---- bag -------------------------------------------------------
 
@@ -776,9 +792,9 @@ class MainWindow(tk.Toplevel):
         wrap.pack(fill="both", expand=True, padx=16, pady=16)
 
         tk.Label(wrap, text=t("bag.title"), bg=PANEL, fg=FG,
-                 font=("Segoe UI", 11, "bold"), anchor="w").pack(fill="x", pady=(0, 10))
+                 font=(FONT, 11, "bold"), anchor="w").pack(fill="x", pady=(0, 10))
         self.bag_msg = tk.Label(wrap, text="", bg=PANEL, fg=GOOD,
-                                font=("Segoe UI", 9), anchor="w", wraplength=380,
+                                font=(FONT, 9), anchor="w", wraplength=380,
                                 justify="left")
 
         def use(fn):
@@ -801,9 +817,9 @@ class MainWindow(tk.Toplevel):
             text = tk.Frame(row, bg="#2a2d38")
             text.pack(side="left", fill="x", expand=True)
             tk.Label(text, text=f"{t('item.' + key)}  \u00d7{count}", bg="#2a2d38",
-                     fg=FG, font=("Segoe UI", 10, "bold"), anchor="w").pack(fill="x")
+                     fg=FG, font=(FONT, 10, "bold"), anchor="w").pack(fill="x")
             tk.Label(text, text=desc, bg="#2a2d38", fg=MUTED,
-                     font=("Segoe UI", 8), anchor="w").pack(fill="x")
+                     font=(FONT, 8), anchor="w").pack(fill="x")
             _action(row, t("bag.use"), use(fn), enabled=bool(count)).pack(
                 side="right", padx=10, pady=6)
 
@@ -812,7 +828,7 @@ class MainWindow(tk.Toplevel):
         self._icon_label(charm, "shiny_charm", 24, PANEL).pack(side="left", padx=(0, 6))
         tk.Label(charm, text=t("bag.charms", n=game.shiny_charms,
                                odds=f"{game.shiny_odds():.0f}"),
-                 bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(side="left")
+                 bg=PANEL, fg=MUTED, font=(FONT, 9), anchor="w").pack(side="left")
         self.bag_msg.pack(fill="x", pady=(10, 0))
 
     # ---- shop ------------------------------------------------------
@@ -825,10 +841,10 @@ class MainWindow(tk.Toplevel):
 
         balance = game.currency(snap.lifetime_tokens)
         tk.Label(wrap, text=t("shop.title", balance=compact(balance)),
-                 bg=PANEL, fg=FG, font=("Segoe UI", 11, "bold"), anchor="w").pack(
+                 bg=PANEL, fg=FG, font=(FONT, 11, "bold"), anchor="w").pack(
             fill="x", pady=(0, 8))
         self.shop_msg = tk.Label(wrap, text="", bg=PANEL, fg=GOOD,
-                                 font=("Segoe UI", 9), anchor="w", wraplength=380,
+                                 font=(FONT, 9), anchor="w", wraplength=380,
                                  justify="left")
         self.shop_msg.pack(fill="x", side="bottom", pady=(8, 0))
 
@@ -853,15 +869,15 @@ class MainWindow(tk.Toplevel):
             title = tk.Frame(text, bg="#2a2d38")
             title.pack(fill="x")
             tk.Label(title, text=t(f"item.{item}"), bg="#2a2d38", fg=FG,
-                     font=("Segoe UI", 10, "bold")).pack(side="left")
+                     font=(FONT, 10, "bold")).pack(side="left")
             floor = EGG_FLOORS.get(item)
             if floor:
                 tk.Label(title, text=tr_rarity(floor[0]),
                          bg=RARITY_COLOR.get(floor[0], MUTED), fg="#1a1a1a",
-                         font=("Segoe UI", 7, "bold"), padx=4).pack(side="left", padx=6)
+                         font=(FONT, 7, "bold"), padx=4).pack(side="left", padx=6)
             tk.Label(text, text=t("shop.price", desc=t(f"item.{item}.desc"),
                                   price=compact(price)),
-                     bg="#2a2d38", fg=MUTED, font=("Segoe UI", 8), anchor="w",
+                     bg="#2a2d38", fg=MUTED, font=(FONT, 8), anchor="w",
                      wraplength=250, justify="left").pack(fill="x")
             _action(row, t("shop.buy"), buy(item), enabled=balance >= price).pack(
                 side="right", padx=10, pady=8)
@@ -879,7 +895,7 @@ class _Bubble(tk.Toplevel):
         frame.pack()
         tk.Label(
             frame, text=text, bg=BG, fg=ACCENT if accent else FG,
-            font=("Segoe UI", 9, "bold" if accent else "normal"),
+            font=(FONT, 9, "bold" if accent else "normal"),
             justify="left", anchor="w", padx=10, pady=6,
         ).pack(padx=1, pady=1)
 
@@ -906,16 +922,28 @@ class FloatingPet(tk.Toplevel):
         self.on_quit = on_quit
         self.overrideredirect(True)
         self.attributes("-topmost", True)
-        self.configure(bg="#010101")
-        self.attributes("-transparentcolor", "#010101")
+
+        # Windows cuts the window's shape by keying out one background colour
+        # (`-transparentcolor`, below); X11 has no such attribute, so the hole
+        # is carved after layout instead, with the Shape extension in
+        # `x11shape` -- tried again on every render (`_reshape`), since
+        # `available()` only degrades a window that never manages it to a
+        # plain opaque card rather than a jarring black box, and the card's
+        # own colour (PANEL, not a key colour) is harmless either way once
+        # shaping does succeed, as the masked-out pixels stop being drawn.
+        self.configure(bg=PANEL)
+        if sys.platform == "win32":
+            key_bg = "#010101"
+            self.configure(bg=key_bg)
+            self.attributes("-transparentcolor", key_bg)
 
         self.sprite = SpriteView(self, app, size=app.config.pet_size,
-                                 matte=True, bg="#010101")
+                                 matte=True, bg=self["bg"])
         self.sprite.pack()
         # The pet floats over arbitrary wallpaper and windows, so the caption
         # gets its own opaque chip rather than relying on the desktop behind it.
         self.caption = tk.Label(self, text="", bg=BG, fg=FG,
-                                font=("Segoe UI", 9, "bold"), padx=8, pady=2)
+                                font=(FONT, 9, "bold"), padx=8, pady=2)
         self.caption.pack()
 
         self._drag = (0, 0)
@@ -1037,7 +1065,7 @@ class FloatingPet(tk.Toplevel):
     def _build_menu(self) -> None:
         self._popup = tk.Menu(self, tearoff=0, bg=PANEL, fg=FG,
                               activebackground=ACCENT, activeforeground="#1a1a1a",
-                              bd=0, font=("Segoe UI", 9))
+                              bd=0, font=(FONT, 9))
         self._popup.add_command(label=t("tray.open"), command=self.on_click)
         self._popup.add_command(label=t("tray.refresh"),
                                 command=self.app.request_refresh)
@@ -1111,3 +1139,29 @@ class FloatingPet(tk.Toplevel):
         self.caption.configure(text=compact(self.app.snapshot.combined.today_tokens))
         if self._alert is not None:
             self._alert.place_above(self)
+        if sys.platform != "win32":
+            self._reshape()
+
+    def _reshape(self) -> None:
+        """Clip the window to the sprite's outline (X11 only).
+
+        Tried on every render rather than cached as a one-time capability
+        check: `x11shape.available()` can still be settling its own X
+        connection the first time this runs (the tray icon is opening one of
+        its own at about the same point in startup), and retrying here is
+        cheap enough that a transient miss just corrects itself next render.
+
+        Every frame of one animation shares a crop box (see `App.frames`), so
+        the silhouette barely moves between ticks; reshaping once per render
+        (every refresh, hatch or evolution) rather than per animation frame
+        keeps this off the hot path without a visible seam.
+        """
+        self.update_idletasks()
+        w, h = self.winfo_width(), self.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+        mask = Image.new("L", (w, h), 255)        # opaque everywhere...
+        alpha = self.sprite.current_alpha()
+        if alpha is not None:                     # ...except cut to the sprite
+            mask.paste(alpha, (self.sprite.winfo_x(), self.sprite.winfo_y()))
+        x11shape.apply_mask(self, mask)
